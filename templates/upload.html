@@ -1,0 +1,70 @@
+<!-- templates/upload.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Summarizer</title>
+</head>
+<body>
+    <h1>PDF Summarizer</h1>
+    <form id="uploadForm">
+        <input type="file" name="file" accept=".pdf" required>
+        <select name="model_choice">
+            <option value="claude">Claude</option>
+            <option value="gemini">Gemini</option>
+        </select>
+        <textarea name="custom_prompt" placeholder="Custom prompt (optional)"></textarea>
+        <button type="submit">Summarize</button>
+    </form>
+
+    <div id="summaryResult"></div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            const summaryDiv = document.getElementById('summaryResult');
+
+            try {
+                const response = await fetch('/summarize', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Handle streaming response
+                const reader = response.body.getReader();
+                let finalSummary = '';
+
+                while (true) {
+                    const {value, done} = await reader.read();
+                    if (done) break;
+                    
+                    // Process each chunk
+                    const chunk = new TextDecoder().decode(value);
+                    const updates = chunk.trim().split('\n');
+                    
+                    for (const update of updates) {
+                        if (update) {
+                            const data = JSON.parse(update);
+                            // Only update the visible summary when status is "completed"
+                            if (data.status === "completed") {
+                                finalSummary = data.summary;
+                                summaryDiv.textContent = finalSummary;
+                            }
+                            console.log('Progress Update:', data);
+
+                        }
+                    }
+                }
+
+            } catch (error) {
+                summaryDiv.textContent = 'An error occurred while generating the summary.';
+            }
+        });
+    </script>
+</body>
+</html>
