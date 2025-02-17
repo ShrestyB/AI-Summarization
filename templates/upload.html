@@ -1,68 +1,180 @@
-<!-- templates/upload.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Summarizer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://kit.fontawesome.com/1da99de032.js" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.js"></script>
+    <script src="//cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <style>
+        body { background-color: #f8f9fa; font-family: Arial, sans-serif; }
+        .container { max-width: 800px; margin-top: 40px; }
+        .card { border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }
+        #summaryResult { 
+            margin-top: 20px; padding: 15px; border: 1px solid #ccc; 
+            background: #f9f9f9; border-radius: 8px; min-height: 50px; 
+        }
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+        .summary-header {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .summary-content p {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+    </style>
 </head>
 <body>
-    <h1>PDF Summarizer</h1>
-    <form id="uploadForm">
-        <input type="file" name="file" accept=".pdf" required>
-        <select name="model_choice">
-            <option value="claude">Claude</option>
-            <option value="gemini">Gemini</option>
-        </select>
-        <textarea name="custom_prompt" placeholder="Custom prompt (optional)"></textarea>
-        <button type="submit">Summarize</button>
-    </form>
-
-    <div id="summaryResult"></div>
+    <div class="container">
+        <div class="card p-4">
+            <h3 class="text-center">PDF Summarizer</h3>
+            <form id="uploadForm">
+                <div class="mb-3">
+                    <input type="file" class="form-control" name="file" accept=".pdf" required>
+                </div>
+                <div class="mb-3">
+                    <select id="model_choice" name="model_choice" class="form-select">
+                        <option value="claude">Claude</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="podchat">PodChat</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <textarea name="custom_prompt" class="form-control" placeholder="Custom prompt (optional)"></textarea>
+                </div>
+                <div class="text-center">
+                    <button type="submit" class="btn btn-primary">Summarize</button>
+                </div>
+            </form>
+            <div class="loading-spinner" id="loadingSpinner">
+                <i class="fas fa-spinner fa-spin"></i> Processing...
+            </div>
+        </div>
+        <div id="summaryResult"></div>
+    </div>
 
     <script>
+        function formatSummaryByLength(text, maxWords = 50) {
+            let formattedHtml = '<div class="summary-content">';
+            
+            const paragraphs = text.split('\n').filter(p => p.trim());
+    
+            paragraphs.forEach(paragraph => {
+                if (!paragraph.trim()) return;
+    
+                if (paragraph.length > 50 && paragraph.trim().endsWith(':')) {
+                    formattedHtml += `<h4>${paragraph}</h4>`;
+                    return;
+                }
+    
+                if (paragraph.trim().startsWith('- ') || paragraph.trim().startsWith('* ')) {
+                    const listContent = paragraph.substring(2);
+                    formattedHtml += `<ul><li>${formatByWordCount(listContent, maxWords)}</li></ul>`;
+                    return;
+                }
+    
+                formattedHtml += formatByWordCount(paragraph, maxWords);
+            });
+    
+            formattedHtml += '</div>';
+            return formattedHtml;
+        }
+    
+        function formatByWordCount(text, maxWords) {
+            let words = text.split(' ');
+            let currentParagraph = '';
+            let currentWordCount = 0;
+            let formattedText = '';
+    
+            words.forEach((word, index) => {
+                currentParagraph += (currentParagraph ? ' ' : '') + word;
+                currentWordCount++;
+    
+                if (currentWordCount >= maxWords && (word.endsWith('.') || index === words.length - 1)) {
+                    formattedText += `<p>${currentParagraph.trim()}</p>`;
+                    currentParagraph = '';
+                    currentWordCount = 0;
+                }
+            });
+    
+            if (currentParagraph) {
+                formattedText += `<p>${currentParagraph.trim()}</p>`;
+            }
+    
+            return formattedText;
+        }    
+
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const formData = new FormData(form);
+            const modelChoice = document.getElementById('model_choice').value;
             const summaryDiv = document.getElementById('summaryResult');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+
+            if (modelChoice === "podchat") {
+                window.location.href = "https://8509-01jm6p22aa4fn37kw3bpbjwgsw.cloudspaces.litng.ai/";
+                return;
+            }
+
+            summaryDiv.innerHTML = '';
+            loadingSpinner.style.display = "block"; // Show loading spinner
 
             try {
-                const response = await fetch('/summarize', {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch('/summarize', { method: 'POST', body: formData });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                if (!response.body) {
+                    throw new Error("No response body received.");
                 }
 
-                // Handle streaming response
                 const reader = response.body.getReader();
-                let finalSummary = '';
-
+                let finalSummary = "";
+                
                 while (true) {
-                    const {value, done} = await reader.read();
+                    const { value, done } = await reader.read();
                     if (done) break;
                     
-                    // Process each chunk
                     const chunk = new TextDecoder().decode(value);
                     const updates = chunk.trim().split('\n');
-                    
+
                     for (const update of updates) {
                         if (update) {
                             const data = JSON.parse(update);
-                            // Only update the visible summary when status is "completed"
+                            console.log("Received update:", data);
+                            
+                            if (data.status === "incoming" && data.chunk) {
+                                finalSummary += data.chunk;
+                                summaryDiv.innerHTML = `
+                                    <div class="summary-header">Summary (Progressing...)</div>
+                                    ${formatSummaryByLength(finalSummary)}
+                                `;
+                            }
+                            
                             if (data.status === "completed") {
                                 finalSummary = data.summary;
-                                summaryDiv.textContent = finalSummary;
+                                summaryDiv.innerHTML = `
+                                    <div class="summary-header">Final Summary</div>
+                                    ${formatSummaryByLength(finalSummary)}
+                                `;
+                                loadingSpinner.style.display = "none"; // Hide loading spinner
                             }
-                            console.log('Progress Update:', data);
-
                         }
                     }
                 }
-
             } catch (error) {
-                summaryDiv.textContent = 'An error occurred while generating the summary.';
+                console.error("Error during summarization:", error);
+                summaryDiv.innerHTML = `<p class="text-danger"><b>Error:</b> ${error.message}</p>`;
+                loadingSpinner.style.display = "none"; // Hide loading spinner
             }
         });
     </script>
