@@ -8,7 +8,7 @@ This project is a FastAPI-based application that extracts text from uploaded PDF
 - **Multiple Model Options:** Choose between:
   - **Claude:** Uses the Claude API.
   - **Gemini:** Uses the Gemini API.
-  - **PodChat:** Generates a podcast-style summary via a custom function.
+  - **PodChat:** Generates a summary via a custom llm function.
 - **Real-time Streaming:** The server sends progress updates in chunks as the summary is generated.
 - **Dynamic Updates:** Intermediate status messages (e.g., processing, initialization, generating) are streamed to the client.
 - **Frontend Integration:** A simple HTML interface (using Jinja2 templates) that shows the final summary, while progress updates are visible in the browser console or network tab.
